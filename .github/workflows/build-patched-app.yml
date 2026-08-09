@@ -1,0 +1,67 @@
+name: Build patched FlowVision
+
+on:
+  push:
+    branches:
+      - build/external-volume-trash-fix
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-15
+
+    steps:
+      - name: Check out FlowVision
+        uses: actions/checkout@v4
+
+      - name: Prepare local package dependencies
+        run: |
+          git clone --depth 1 --branch v4.1.0 https://github.com/attaswift/BTree.git "$GITHUB_WORKSPACE/../BTree"
+          git clone --depth 1 --branch 3.1.1 https://github.com/sindresorhus/Settings.git "$GITHUB_WORKSPACE/../Settings"
+
+      - name: Prepare FFmpeg frameworks
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/../ffmpeg-kit-build/bundle-apple-xcframework-macos"
+          curl --fail --location --silent --show-error \
+            --output "$RUNNER_TEMP/ffmpeg-kit.zip" \
+            https://github.com/netdcy/ffmpeg-kit/releases/download/v6.0/ffmpeg-kit-full-gpl-6.0-macos-xcframework.zip
+          ditto -x -k "$RUNNER_TEMP/ffmpeg-kit.zip" "$GITHUB_WORKSPACE/../ffmpeg-kit-build/bundle-apple-xcframework-macos"
+
+      - name: Select Xcode
+        run: |
+          XCODE_APP="$(find /Applications -maxdepth 1 -name 'Xcode_16*.app' -print | sort -V | tail -n 1)"
+          test -n "$XCODE_APP"
+          sudo xcode-select --switch "$XCODE_APP/Contents/Developer"
+          xcodebuild -version
+
+      - name: Build release app
+        run: |
+          xcodebuild \
+            -project FlowVision.xcodeproj \
+            -scheme FlowVision \
+            -configuration Release \
+            -derivedDataPath "$RUNNER_TEMP/DerivedData" \
+            CODE_SIGNING_ALLOWED=NO \
+            DEVELOPMENT_TEAM= \
+            clean build
+
+      - name: Ad-hoc sign app
+        run: |
+          APP="$RUNNER_TEMP/DerivedData/Build/Products/Release/FlowVision.app"
+          codesign --force --deep --sign - --entitlements FlowVision/FlowVision.entitlements "$APP"
+          codesign --verify --deep --strict --verbose=2 "$APP"
+
+      - name: Package app
+        run: |
+          ditto -c -k --sequesterRsrc --keepParent \
+            "$RUNNER_TEMP/DerivedData/Build/Products/Release/FlowVision.app" \
+            "$RUNNER_TEMP/FlowVision-patched.zip"
+
+      - name: Upload app
+        uses: actions/upload-artifact@v4
+        with:
+          name: FlowVision-patched
+          path: ${{ runner.temp }}/FlowVision-patched.zip
+          if-no-files-found: error
