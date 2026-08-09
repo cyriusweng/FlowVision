@@ -134,7 +134,7 @@ class PublicVar{
     var isLaunchFromFile_changeLargeImage = false
     var randomSeed = Int.random(in: 0...Int.max)
     var isLargeImageFitWindow = true
-    var isRecursiveMode = false
+    var isRecursiveMode = UserDefaults.standard.bool(forKey: "startInRecursiveMode")
     var isRecursiveContainFolder = false
     var isShowHiddenFile = false
     var isShowAllTypeFile = false
